@@ -1,0 +1,50 @@
+# ============================================
+# Docker Compose для Max Bot
+# ============================================
+
+services:
+  # PostgreSQL база данных
+  db:
+    image: postgres:16-alpine
+    container_name: max-bot-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      POSTGRES_DB: ${DATABASE_NAME:-maxbot}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Max Bot приложение
+  bot:
+    image: max-bot:latest
+    container_name: max-bot
+    restart: unless-stopped
+    environment:
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN}
+      CHAT_ID_MAX: ${CHAT_ID_MAX}
+      BASE_URL_NEWS: ${BASE_URL_NEWS:-https://nti.ncfu.ru/filial/vse-novosti/?PAGEN_1=}
+      DATABASE_HOST: db
+      DATABASE_PORT: 5432
+      DATABASE_USER: ${DATABASE_USER:-postgres}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      DATABASE_NAME: ${DATABASE_NAME:-maxbot}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DIRECTOR_POSITION: ${DIRECTOR_POSITION:-Директору НТИ (филиал) СКФУ}
+      DIRECTOR_FIO: ${DIRECTOR_FIO:-Ефанов А.В.}
+      DIRECTOR_FULL_NAME: ${DIRECTOR_FULL_NAME:-Алексей Валерьевич}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./public:/app/public:ro
+
+volumes:
+  postgres_data:

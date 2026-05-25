@@ -1,0 +1,27 @@
+[Unit]
+Description=Max Bot НТИ (филиал) СКФУ
+Documentation=https://github.com/your-repo/max-bot
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/max-bot
+Environment="NODE_ENV=production"
+EnvironmentFile=/opt/max-bot/.env
+ExecStart=/usr/bin/node /opt/max-bot/dist/index.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=max-bot
+
+# Безопасность
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/max-bot
+
+[Install]
+WantedBy=multi-user.target
