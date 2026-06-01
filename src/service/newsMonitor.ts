@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { Bot } from '@maxhub/max-bot-api';
 import { ParserNews } from './parserNews';
 import { formatNewsWithAI } from './aiFormatter';
-import { initDatabase, saveNews, newsExists, markAsPublished, getUnpublishedNews } from '../database';
+import { initDatabase, saveNews, newsExists, markAsPublished, getUnpublishedNews, getLatestNews } from '../database';
 import { News } from '../types/news';
 
 export class NewsMonitor {
@@ -41,36 +41,66 @@ export class NewsMonitor {
     }
 
     this.isRunning = true;
-    console.log(`[${new Date().toISOString()}] Checking for new news...`);
 
     try {
-      // Получаем URL первой новости
-      const newsUrl = await this.parser.fetchFirstNewsUrl();
+      // Получаем список всех новостей со страницы
+      console.log('Fetching news list...');
+      const newsList = await this.parser.fetchNewsList();
 
-      if (!newsUrl) {
-        console.log('No news URL found');
+      if (newsList.length === 0) {
+        console.log('No news found on page');
         return;
       }
 
-      // Проверяем, есть ли уже эта новость в базе
-      const exists = await newsExists(newsUrl);
+      console.log(`Found ${newsList.length} news items on page`);
 
-      if (!exists) {
-        // Новость новая — получаем полную информацию
-        const news = await this.parser.fetchNewsDetails(newsUrl);
+      // Логируем первые 3 новости для отладки
+      if (newsList.length > 0) {
+        console.log('First 3 news items:');
+        for (let i = 0; i < Math.min(3, newsList.length); i++) {
+          console.log(`  ${i + 1}. ${newsList[i].url}`);
+        }
+      }
 
-        if (!news) {
-          console.log('Failed to fetch news details');
-          return;
+      // Обрабатываем каждую новость со страницы
+      for (let i = 0; i < newsList.length; i++) {
+        const newsItem = newsList[i];
+        console.log(`[${i + 1}/${newsList.length}] Processing: ${newsItem.url}`);
+        
+        // Случайная задержка от 3 до 8 секунд
+        const delay = Math.floor(Math.random() * 5000) + 3000;
+        console.log(`Waiting ${delay}ms before next request...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Если новость уже в БД — пропускаем
+        const exists = await newsExists(newsItem.url);
+        if (exists) {
+          console.log(`  News already in DB`);
+          continue;
         }
 
+        // Новость новая — получаем полную информацию
+        console.log(`  Fetching details...`);
+        const news = await this.parser.fetchNewsDetails(newsItem.url);
+
+        if (!news) {
+          console.log(`  Failed to fetch news details`);
+          continue;
+        }
+
+        // Сохраняем
         const saved = await saveNews(news);
         if (saved) {
-          console.log(`✅ New news saved: "${news.title}"`);
+          console.log(`  ✅ Saved: ${news.title}`);
         }
       }
 
       // Публикуем все неопубликованные новости
+      const unpublished = await getUnpublishedNews();
+      console.log(`Found ${unpublished.length} unpublished news items`);
+      for (const news of unpublished) {
+        console.log(`  - ${news.title}`);
+      }
       await this.publishUnpublishedNews();
     } catch (error) {
       console.error('Error checking news:', error);
@@ -81,12 +111,14 @@ export class NewsMonitor {
 
   private async publishUnpublishedNews(): Promise<void> {
     const unpublished = await getUnpublishedNews();
+    console.log(`Found ${unpublished.length} unpublished news items`);
 
+    // Публикуем в порядке добавления в БД (created_at ASC)
     for (const news of unpublished) {
       try {
         await this.publishToChannel(news);
         await markAsPublished(news.url);
-        console.log(`📢 Published to channel: "${news.title}"`);
+        console.log(`Published: ${news.title}`);
       } catch (error) {
         console.error(`Failed to publish "${news.title}":`, error);
       }
@@ -94,14 +126,9 @@ export class NewsMonitor {
   }
 
   private async publishToChannel(news: News): Promise<void> {
-    // Форматируем контент через DeepSeek
-    const formattedContent = news.content
-      ? await formatNewsWithAI(news.content)
-      : '';
-
     let message = `**${news.title}**\n\n`;
-    if (formattedContent) {
-      message += `${formattedContent}\n\n`;
+    if (news.content) {
+      message += `${news.content}\n\n`;
     }
     message += `🔗 ${news.url}`;
 

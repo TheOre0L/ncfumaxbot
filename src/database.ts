@@ -58,13 +58,24 @@ export async function initDatabase(): Promise<void> {
 export async function saveNews(news: News): Promise<boolean> {
   const client = await pool.connect();
   try {
+    // Если новость уже есть, обновляем только если published = FALSE
     const result = await client.query(
       `INSERT INTO news (title, url, date, content, images, category, published)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (url) DO NOTHING RETURNING id`,
+       ON CONFLICT (url) DO UPDATE SET 
+         title = EXCLUDED.title,
+         date = EXCLUDED.date,
+         content = EXCLUDED.content,
+         images = EXCLUDED.images,
+         category = EXCLUDED.category,
+         published = EXCLUDED.published
+       WHERE news.published = FALSE
+       RETURNING id`,
       [news.title, news.url, news.date, news.content, news.images, news.category, news.published]
     );
-    return result.rowCount !== null && result.rowCount > 0;
+    
+    const rowCount = result.rowCount !== null ? result.rowCount : 0;
+    return rowCount > 0;
   } catch (error) {
     console.error('Error saving news:', error);
     return false;
